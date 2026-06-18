@@ -1,0 +1,284 @@
+---
+name: Release
+
+# Attested delivery pipeline — language-agnostic template.
+#
+# Flow: build tarball → attest-build-provenance → generate + attest CycloneDX SBOM
+#       → fail-closed verify (gh attestation verify) → tag-gated publish.
+#
+# The invariant: an artifact reaches consumers ONLY if it is byte-identical to
+# what was validated, carries SLSA provenance + SBOM attestations that re-verify
+# at every hop, and publication is fail-closed on that verification. A tag
+# publishes nothing unattested.
+#
+# Dry-run: workflow_dispatch from any branch exercises the full
+# build → attest → verify chain; the publish job is tag-gated and skipped.
+#
+# Adapt the "build" job's "Build artifact" step to your toolchain.
+# Everything else — attestation, verification, publish — is toolchain-agnostic.
+
+"on":
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Meta: resolve artifact name + version from the tag or a dev default.
+  # ---------------------------------------------------------------------------
+  meta:
+    name: Resolve Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.meta.outputs.name }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout repository
+        # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Resolve artifact name and version
+        id: meta
+        run: |
+          set -euo pipefail
+          # NAME — derive from the repo name; consumers can override this.
+          NAME="${GITHUB_REPOSITORY##*/}"
+          # VERSION — tag (strip leading "v") or dev fallback.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved: ${NAME} ${VERSION}"
+
+  # ---------------------------------------------------------------------------
+  # Build: produce a deterministic tarball from the source tree.
+  # Replace the "Build artifact" step with your toolchain's build command.
+  # The contract: place output file(s) in dist/ — everything else is automatic.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build Artifact
+    needs: [meta]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write      # required for OIDC → Sigstore signing
+      attestations: write  # required to write attestation records
+
+    steps:
+      - name: Checkout repository
+        # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      # -----------------------------------------------------------------------
+      # ADAPT THIS STEP for your toolchain.
+      # Examples:
+      #   Go:    go build -o dist/${NAME}-${VERSION}-linux-amd64 ./cmd/...
+      #   Rust:  cargo build --release --locked && cp target/release/... dist/
+      #   Node:  npm ci && npm run build && tar -czf dist/... dist-src/
+      #   Any:   <your build command> — output MUST land under dist/
+      # -----------------------------------------------------------------------
+      - name: Build artifact
+        env:
+          NAME: ${{ needs.meta.outputs.name }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # Language-agnostic default: pack a reproducible source tarball.
+          # Replace this block with your toolchain's build command.
+          git archive \
+            --format=tar.gz \
+            --prefix="${NAME}-${VERSION}/" \
+            -o "dist/${NAME}-${VERSION}.tar.gz" \
+            "${GITHUB_SHA}"
+          echo "Built: dist/${NAME}-${VERSION}.tar.gz"
+          sha256sum dist/*
+
+      # -----------------------------------------------------------------------
+      # Attest SLSA build provenance (GitHub-native, no key material required).
+      # This binds the artifact bytes to the workflow run that produced them.
+      # -----------------------------------------------------------------------
+      - name: Attest build provenance
+        # v2.4.0
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: dist/*
+
+      - name: Upload build artifact
+        # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-dist
+          path: dist/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # SBOM: generate a CycloneDX SBOM over the repo and attest it, binding the
+  # SBOM document to the built artifacts.
+  # ---------------------------------------------------------------------------
+  sbom:
+    name: SBOM (generate + attest)
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout repository
+        # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Download build artifacts
+        # v4.3.0
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-dist
+          path: dist
+
+      - name: Generate CycloneDX SBOM
+        # v0.24.0 — anchore/sbom-action uses Syft under the hood
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-sbom.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      # Attest SBOM: binds every artifact in dist/ to the SBOM document.
+      - name: Attest SBOM
+        # v2.3.0
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b
+        with:
+          subject-path: dist/*
+          sbom-path: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-sbom.cdx.json
+
+      - name: Upload SBOM artifact
+        # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-sbom
+          path: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-sbom.cdx.json
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Verify: FAIL-CLOSED attestation verification.
+  # This job MUST succeed before publish. It verifies:
+  #   1. SLSA build provenance on every artifact.
+  #   2. SBOM attestation on every artifact.
+  # If either check fails the workflow halts and nothing is published.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Verify Attestations (fail-closed)
+    needs: [meta, build, sbom]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: read
+
+    steps:
+      - name: Download all artifacts
+        # v4.3.0
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-*
+          path: all-artifacts
+          merge-multiple: true
+
+      - name: Fail-closed attestation verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # Collect the built artifacts (exclude the SBOM document itself).
+          artifacts=()
+          for f in all-artifacts/*; do
+            case "$f" in
+              *-sbom.cdx.json) continue ;;  # SBOM doc is not a verification subject here
+              *) artifacts+=("$f") ;;
+            esac
+          done
+
+          if [ "${#artifacts[@]}" -eq 0 ]; then
+            echo "::error::No artifacts found to verify"
+            exit 1
+          fi
+
+          echo "Verifying ${#artifacts[@]} artifact(s)..."
+
+          for artifact in "${artifacts[@]}"; do
+            echo ""
+            echo "=== Verifying: ${artifact} ==="
+
+            # 1. SLSA build provenance — must exist and be signed by THIS repo's workflow.
+            echo "  [1/2] Build provenance..."
+            gh attestation verify "${artifact}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --predicate-type "https://slsa.dev/provenance/v1"
+            echo "  PASS: build provenance"
+
+            # 2. SBOM attestation — artifact must be bound to an SBOM.
+            echo "  [2/2] SBOM attestation..."
+            gh attestation verify "${artifact}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --predicate-type "https://cyclonedx.org/bom"
+            echo "  PASS: SBOM attestation"
+          done
+
+          echo ""
+          echo "All attestations verified. Proceeding to publish."
+
+  # ---------------------------------------------------------------------------
+  # Publish: create a GitHub Release.
+  # GATED: requires verify to succeed AND the ref must be a tag.
+  # Nothing is published on workflow_dispatch (dry-run) or non-tag pushes.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [meta, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required to create the GitHub Release
+
+    steps:
+      - name: Download all artifacts
+        # v4.3.0
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        env:
+          NAME: ${{ needs.meta.outputs.name }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          cd dist
+          sha256sum -- * > "${NAME}-${VERSION}-checksums.txt"
+          echo "Checksums:"
+          cat "${NAME}-${VERSION}-checksums.txt"
+
+      - name: Create GitHub Release
+        # v2.2.2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ needs.meta.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

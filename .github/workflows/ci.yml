@@ -1,0 +1,137 @@
+---
+name: CI
+
+# Continuous integration: runs on every push and pull_request to main.
+# Includes a mandatory pin-check job that fails if any workflow uses a
+# non-SHA action reference — enforcing the supply-chain security invariant
+# that every action must be pinned to a full 40-char commit SHA.
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Pin check: every `uses:` in .github/workflows/ MUST be pinned to a full
+  # 40-character hex SHA. Tag or branch references are rejected.
+  #
+  # This enforces supply-chain security: a mutable tag can be silently moved
+  # to point at a different (potentially malicious) commit. A full SHA is
+  # immutable — the workflow always runs exactly the code it was audited against.
+  #
+  # Pattern matched: uses: owner/repo@<ref>
+  # Rejected: anything where <ref> is NOT 40 hex chars.
+  # ---------------------------------------------------------------------------
+  pin-check:
+    name: Action Pin Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Verify all actions are SHA-pinned
+        run: |
+          set -euo pipefail
+          echo "Checking all workflow files for non-SHA action references..."
+
+          # Find all workflow YAML files.
+          mapfile -t workflow_files < <(
+            find .github/workflows -name '*.yml' -o -name '*.yaml' 2>/dev/null | sort
+          )
+
+          if [ "${#workflow_files[@]}" -eq 0 ]; then
+            echo "No workflow files found."
+            exit 0
+          fi
+
+          violations=0
+          for file in "${workflow_files[@]}"; do
+            # Match lines with `uses: owner/repo@<ref>`
+            # A valid SHA is exactly 40 lowercase hex chars.
+            # We also allow `uses: ./.github/workflows/...` (local reusable workflows).
+            while IFS= read -r line; do
+              # Skip local workflow references (start with ./)
+              if echo "$line" | grep -qE "uses:\s+\.\/"; then
+                continue
+              fi
+              # Extract the ref part (after @)
+              ref=$(echo "$line" | grep -oE "@[^ #]+" | head -1 | tr -d '@')
+              if [ -z "$ref" ]; then
+                continue
+              fi
+              # A valid full SHA is exactly 40 lowercase hex characters.
+              if ! echo "$ref" | grep -qE "^[0-9a-f]{40}$"; then
+                echo "::error file=${file}::Non-SHA pin detected: ${line}"
+                echo "  FILE: ${file}"
+                echo "  LINE: ${line}"
+                echo "  REF:  ${ref}  (must be a 40-char hex SHA)"
+                violations=$((violations + 1))
+              fi
+            done < <(grep -E "uses:\s+\S+@" "$file" 2>/dev/null || true)
+          done
+
+          if [ "$violations" -gt 0 ]; then
+            echo ""
+            echo "::error::Found ${violations} non-SHA pin(s). Pin every action to a full SHA."
+            echo "Use: gh api repos/<owner>/<repo>/commits/<tag> --jq .sha"
+            exit 1
+          fi
+
+          echo "All actions are SHA-pinned. Supply-chain check passed."
+
+  # ---------------------------------------------------------------------------
+  # Lint: basic shell/YAML linting placeholder.
+  # Replace or extend with your project's linter.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Check for TODO/FIXME markers (informational)
+        run: |
+          set -euo pipefail
+          count=$(grep -rn "TODO\|FIXME\|HACK\|XXX" \
+            --include="*.yml" --include="*.yaml" \
+            --include="*.sh" --include="*.md" \
+            . 2>/dev/null | wc -l || true)
+          echo "Found ${count} TODO/FIXME/HACK/XXX marker(s) (informational only)."
+
+  # ---------------------------------------------------------------------------
+  # Validate: verify workflow YAML is well-formed.
+  # Requires actionlint to be installed, or skips gracefully if absent.
+  # ---------------------------------------------------------------------------
+  validate-workflows:
+    name: Validate Workflow YAML
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        # v4.2.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          # Download a specific version of actionlint for reproducibility.
+          ACTIONLINT_VERSION="1.7.7"
+          curl -sSfL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | tar xz -C /usr/local/bin actionlint
+          actionlint --version
+
+      - name: Run actionlint
+        run: actionlint .github/workflows/*.yml
