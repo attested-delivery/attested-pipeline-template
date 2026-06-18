@@ -78,7 +78,10 @@ jobs:
                 echo "  REF:  ${ref}  (must be a 40-char hex SHA)"
                 violations=$((violations + 1))
               fi
-            done < <(grep -E "uses:\s+\S+@" "$file" 2>/dev/null || true)
+            # Anchor `uses:` to the start of the line (after optional list
+            # dash) so commented examples like "# ... uses: owner/repo@ref"
+            # are not treated as real action references.
+            done < <(grep -E "^[[:space:]]*-?[[:space:]]*uses:[[:space:]]+\S+@" "$file" 2>/dev/null || true)
           done
 
           if [ "$violations" -gt 0 ]; then

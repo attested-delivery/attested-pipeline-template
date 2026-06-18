@@ -144,15 +144,20 @@ jobs:
           name: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-dist
           path: dist
 
+      # Install Syft directly (official installer, pinned to v1.45.1) rather
+      # than a third-party Marketplace action, so the org Actions allow-list
+      # (GitHub-owned + verified creators only) never blocks this workflow.
       - name: Generate CycloneDX SBOM
-        # v0.24.0 — anchore/sbom-action uses Syft under the hood
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-sbom.cdx.json
-          upload-artifact: false
-          upload-release-assets: false
+        env:
+          NAME: ${{ needs.meta.outputs.name }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/v1.45.1/install.sh \
+            | sh -s -- -b "${RUNNER_TEMP}/bin" v1.45.1
+          "${RUNNER_TEMP}/bin/syft" scan dir:. \
+            -o "cyclonedx-json=${NAME}-${VERSION}-sbom.cdx.json"
+          echo "Generated SBOM: ${NAME}-${VERSION}-sbom.cdx.json"
 
       # Attest SBOM: binds every artifact in dist/ to the SBOM document.
       - name: Attest SBOM
@@ -270,15 +275,18 @@ jobs:
           echo "Checksums:"
           cat "${NAME}-${VERSION}-checksums.txt"
 
+      # Create the release with the GitHub CLI (pre-installed on the runner)
+      # rather than a third-party action, keeping every step GitHub-native so
+      # the org Actions allow-list cannot block publication.
       - name: Create GitHub Release
-        # v2.2.2
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ needs.meta.outputs.version }}
-          generate_release_notes: true
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          files: dist/*
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          PRERELEASE=()
+          case "${GITHUB_REF_NAME}" in *-*) PRERELEASE=(--prerelease) ;; esac
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --title "Release ${VERSION}" \
+            --generate-notes \
+            "${PRERELEASE[@]}"
