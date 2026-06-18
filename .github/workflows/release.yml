@@ -286,7 +286,10 @@ jobs:
           set -euo pipefail
           PRERELEASE=()
           case "${GITHUB_REF_NAME}" in *-*) PRERELEASE=(--prerelease) ;; esac
+          # --repo avoids needing a local git checkout (gh infers the repo
+          # from $GITHUB_REPOSITORY instead of a .git remote).
           gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
             --title "Release ${VERSION}" \
             --generate-notes \
             "${PRERELEASE[@]}"
