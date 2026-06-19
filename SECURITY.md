@@ -112,6 +112,32 @@ GitHub Actions OIDC token.
 
 ---
 
+## Verifying gate-verdict attestations
+
+Beyond provenance + SBOM (verified with `--repo`, above), this template
+seam-signs two gate verdicts bound to a subject digest: **SAST** (CodeQL, in
+`release.yml`, over the release subject) and **DAST** (ZAP, in `dast.yml`, over
+the scanned subject). Each is signed by the central attestation seam
+`reusable-attest-scan.yml`; under SLSA Build L3 the signer identity is that
+central workflow, so verification **requires** `--signer-workflow` (one
+signer/predicate per command) — `--owner`/`--repo` alone is insufficient:
+
+```bash
+# SAST (CodeQL) and DAST (ZAP) verdicts over the subject they were bound to.
+for PT in sast dast; do
+  gh attestation verify "$SUBJECT" --owner attested-delivery \
+    --signer-workflow attested-delivery/.github/.github/workflows/reusable-attest-scan.yml \
+    --predicate-type "https://attested-delivery.github.io/attestations/${PT}/v1"
+done
+```
+
+The Rust reference `attested-delivery/rust-template` wires the same seam for SCA
+(OSV), IaC/license (Trivy), and container-scan (Trivy image). A passing
+verification proves the gate **ran and recorded a verdict** bound to the subject
+digest; read the predicate body for the verdict itself (signed ≠ passed).
+
+---
+
 ## Supply-Chain Security Posture
 
 - All GitHub Actions used in this repository are pinned to immutable full

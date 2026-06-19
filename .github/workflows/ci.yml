@@ -22,76 +22,18 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Pin check: every `uses:` in .github/workflows/ MUST be pinned to a full
-  # 40-character hex SHA. Tag or branch references are rejected.
-  #
-  # This enforces supply-chain security: a mutable tag can be silently moved
-  # to point at a different (potentially malicious) commit. A full SHA is
-  # immutable — the workflow always runs exactly the code it was audited against.
-  #
-  # Pattern matched: uses: owner/repo@<ref>
-  # Rejected: anything where <ref> is NOT 40 hex chars.
+  # Pin check — every `uses:` in this repo MUST be pinned to a full 40-char
+  # commit SHA; tag/branch refs are rejected. Per CLAUDE.md §2/§3 (consume the
+  # central reusables, never reinvent them) this is a THIN CALLER of the org's
+  # central `pin-check.yml` reusable, not an inline re-implementation. The
+  # reusable is itself pinned by the central `.github` repo's commit SHA.
   # ---------------------------------------------------------------------------
+  # attested-delivery/.github main @ aba1860 (resolved 2026-06-16)
   pin-check:
-    name: Action Pin Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        # v4.2.2
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-
-      - name: Verify all actions are SHA-pinned
-        run: |
-          set -euo pipefail
-          echo "Checking all workflow files for non-SHA action references..."
-
-          # Find all workflow YAML files.
-          mapfile -t workflow_files < <(
-            find .github/workflows -name '*.yml' -o -name '*.yaml' 2>/dev/null | sort
-          )
-
-          if [ "${#workflow_files[@]}" -eq 0 ]; then
-            echo "No workflow files found."
-            exit 0
-          fi
-
-          violations=0
-          for file in "${workflow_files[@]}"; do
-            # Match lines with `uses: owner/repo@<ref>`
-            # A valid SHA is exactly 40 lowercase hex chars.
-            # We also allow `uses: ./.github/workflows/...` (local reusable workflows).
-            while IFS= read -r line; do
-              # Skip local workflow references (start with ./)
-              if echo "$line" | grep -qE "uses:\s+\.\/"; then
-                continue
-              fi
-              # Extract the ref part (after @)
-              ref=$(echo "$line" | grep -oE "@[^ #]+" | head -1 | tr -d '@')
-              if [ -z "$ref" ]; then
-                continue
-              fi
-              # A valid full SHA is exactly 40 lowercase hex characters.
-              if ! echo "$ref" | grep -qE "^[0-9a-f]{40}$"; then
-                echo "::error file=${file}::Non-SHA pin detected: ${line}"
-                echo "  FILE: ${file}"
-                echo "  LINE: ${line}"
-                echo "  REF:  ${ref}  (must be a 40-char hex SHA)"
-                violations=$((violations + 1))
-              fi
-            # Anchor `uses:` to the start of the line (after optional list
-            # dash) so commented examples like "# ... uses: owner/repo@ref"
-            # are not treated as real action references.
-            done < <(grep -E "^[[:space:]]*-?[[:space:]]*uses:[[:space:]]+\S+@" "$file" 2>/dev/null || true)
-          done
-
-          if [ "$violations" -gt 0 ]; then
-            echo ""
-            echo "::error::Found ${violations} non-SHA pin(s). Pin every action to a full SHA."
-            echo "Use: gh api repos/<owner>/<repo>/commits/<tag> --jq .sha"
-            exit 1
-          fi
-
-          echo "All actions are SHA-pinned. Supply-chain check passed."
+    permissions:
+      contents: read
+    uses: >-
+      attested-delivery/.github/.github/workflows/pin-check.yml@aba1860be6b6ebd5c0c0a0f07160946fb0349965
 
   # ---------------------------------------------------------------------------
   # Lint: basic shell/YAML linting placeholder.

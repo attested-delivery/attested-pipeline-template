@@ -30,19 +30,43 @@ LICENSE           # Apache-2.0
 | Job | What it does | Key permissions |
 |---|---|---|
 | `meta` | Resolves artifact name + version from the git ref | `contents: read` |
-| `build` | Builds the artifact, attests SLSA build provenance | `id-token: write`, `attestations: write` |
+| `build` | Builds the artifact, attests SLSA build provenance, exposes the subject digest | `id-token: write`, `attestations: write` |
 | `sbom` | Generates a CycloneDX SBOM via Syft, attests it | `id-token: write`, `attestations: write` |
-| `verify` | **Fail-closed**: verifies provenance + SBOM on every artifact | `attestations: read` |
+| `gate-sast` | SAST (CodeQL) — thin caller of `reusable-sast-codeql.yml`, emits SARIF | `security-events: write` |
+| `attest-sast` | Seam-signs the SAST verdict (`sast/v1`) bound to the release subject | `id-token: write`, `attestations: write` |
+| `verify` | **Fail-closed**: verifies provenance + SBOM + the seam-signed SAST verdict | `attestations: read` |
 | `publish` | Creates the GitHub Release with checksums | `contents: write` — only on tag push, only if `verify` passes |
 
 The pipeline supports `workflow_dispatch` as a dry-run: the full
 build → attest → verify chain runs, but `publish` is skipped (tag-gated).
 
+**Artifact verdicts are signed and attested at release.**
+Every gate verdict that characterizes the shipped artifact — SAST (CodeQL), SCA
+(OSV), IaC/license (Trivy), container-scan (Trivy image), and DAST (ZAP) — is
+signed and attested at release, bound to the release subject by digest. SAST
+analyzes the exact source that ships, so its verdict travels with the release
+like the others. Supply-chain posture (Scorecard) is a repo-level signal, not an
+artifact verdict. This template wires SAST at release (`release.yml`) and a
+concrete DAST example (`dast.yml`); see `attested-delivery/rust-template` for SCA,
+IaC/license, and container-scan over a release subject.
+
 ### `ci.yml` — CI + Pin Check
 
-Includes a mandatory `pin-check` job that inspects every workflow file and
-exits 1 if any `uses:` line references an action by tag or branch name instead
-of a full 40-character commit SHA.
+Includes a mandatory `pin-check` job — a thin caller of the central
+`attested-delivery/.github` **`pin-check.yml`** reusable (pinned by the `.github`
+repo's commit SHA), per CLAUDE.md §2/§3 (consume the central reusables, never
+reinvent them). It fails closed if any `uses:` references an action by tag or
+branch instead of a full 40-character commit SHA.
+
+### `dast.yml` — Attested DAST (ZAP)
+
+Concrete DAST example: points the central `reusable-zap.yml` at a **running**
+target (`workflow_dispatch` input `target`, default the org's deployed site),
+then `attest-dast` seam-signs the verdict as `dast/v1` bound to a subject digest,
+and a fail-closed `verify` job re-checks it. Stand up your own deployed
+preview/staging and pass its URL. Requires the org Actions allow-list to permit
+`zaproxy/*` (owner action) since `reusable-zap.yml` pulls
+`zaproxy/action-full-scan`.
 
 ## Adapting This Template
 
