@@ -208,9 +208,9 @@ jobs:
       contents: read
       actions: read
       packages: read   # reusable's analyze job declares it (CodeQL pkg resolution)
-    # attested-delivery/.github main @ 77a87549 (merged 2026-06-16)
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
     uses: >-
-      attested-delivery/.github/.github/workflows/reusable-sast-codeql.yml@aba1860be6b6ebd5c0c0a0f07160946fb0349965
+      attested-delivery/.github/.github/workflows/reusable-sast-codeql.yml@698148e12da113cfeeef8742c31ae93657959e67
     with:
       languages: actions
       build-mode: none
@@ -222,15 +222,104 @@ jobs:
       id-token: write
       attestations: write
       contents: read
-    # attested-delivery/.github main @ 77a87549 (merged 2026-06-16)
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
     uses: >-
-      attested-delivery/.github/.github/workflows/reusable-attest-scan.yml@aba1860be6b6ebd5c0c0a0f07160946fb0349965
+      attested-delivery/.github/.github/workflows/reusable-attest-scan.yml@698148e12da113cfeeef8742c31ae93657959e67
     with:
       subject-name: ${{ needs.build.outputs.subject-name }}
       subject-digest: ${{ needs.build.outputs.subject-digest }}
       predicate-type: https://attested-delivery.github.io/attestations/sast/v1
       predicate-artifact: ${{ needs.gate-sast.outputs.sarif-artifact }}
       predicate-filename: ${{ needs.gate-sast.outputs.sarif-filename }}
+
+  # ---------------------------------------------------------------------------
+  # SCA (OSV) gate + attestation seam — dependency verdict signed over the
+  # release subject, fail-closed verified before publish.
+  # ---------------------------------------------------------------------------
+  gate-sca:
+    name: Gate — SCA (OSV)
+    needs: [meta]
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      pull-requests: write   # reusable's (skipped) dependency-review job declares it
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
+    uses: >-
+      attested-delivery/.github/.github/workflows/reusable-sca-osv.yml@698148e12da113cfeeef8742c31ae93657959e67
+    with:
+      fail-on-severity: high
+
+  attest-sca:
+    name: Attest — SCA
+    needs: [meta, build, gate-sca]
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
+    uses: >-
+      attested-delivery/.github/.github/workflows/reusable-attest-scan.yml@698148e12da113cfeeef8742c31ae93657959e67
+    with:
+      subject-name: ${{ needs.build.outputs.subject-name }}
+      subject-digest: ${{ needs.build.outputs.subject-digest }}
+      predicate-type: https://attested-delivery.github.io/attestations/sca/v1
+      predicate-artifact: ${{ needs.gate-sca.outputs.sarif-artifact }}
+      predicate-filename: ${{ needs.gate-sca.outputs.sarif-filename }}
+
+  # ---------------------------------------------------------------------------
+  # IaC + license (Trivy filesystem) gate + attestation seam.
+  # ---------------------------------------------------------------------------
+  gate-trivy:
+    name: Gate — Trivy (IaC/license)
+    needs: [meta]
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      packages: read   # reusable's (skipped) image job declares it
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
+    uses: >-
+      attested-delivery/.github/.github/workflows/reusable-trivy.yml@698148e12da113cfeeef8742c31ae93657959e67
+    with:
+      scan-iac: true
+
+  attest-iac-license:
+    name: Attest — IaC/license
+    needs: [meta, build, gate-trivy]
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
+    uses: >-
+      attested-delivery/.github/.github/workflows/reusable-attest-scan.yml@698148e12da113cfeeef8742c31ae93657959e67
+    with:
+      subject-name: ${{ needs.build.outputs.subject-name }}
+      subject-digest: ${{ needs.build.outputs.subject-digest }}
+      predicate-type: https://attested-delivery.github.io/attestations/iac-license/v1
+      predicate-artifact: ${{ needs.gate-trivy.outputs.sarif-artifact }}
+      predicate-filename: ${{ needs.gate-trivy.outputs.sarif-filename }}
+
+  # ---------------------------------------------------------------------------
+  # VEX — OpenVEX vulnerability disposition, self-signed by reusable-vex.yml
+  # (its own signer identity) bound to the release subject. Maintain the
+  # disposition document in .vex/openvex.json.
+  # ---------------------------------------------------------------------------
+  vex:
+    name: Gate — VEX (OpenVEX)
+    needs: [meta, build]
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
+    uses: >-
+      attested-delivery/.github/.github/workflows/reusable-vex.yml@698148e12da113cfeeef8742c31ae93657959e67
+    with:
+      subject-name: ${{ needs.build.outputs.subject-name }}
+      subject-digest: ${{ needs.build.outputs.subject-digest }}
+      vex-path: .vex/openvex.json
 
   # ---------------------------------------------------------------------------
   # Verify: FAIL-CLOSED attestation verification.
@@ -242,7 +331,7 @@ jobs:
   # ---------------------------------------------------------------------------
   verify:
     name: Verify Attestations (fail-closed)
-    needs: [meta, build, sbom, attest-sast]
+    needs: [meta, build, sbom, attest-sast, attest-sca, attest-iac-license, vex]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -262,6 +351,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           OWNER: ${{ github.repository_owner }}
           SEAM: attested-delivery/.github/.github/workflows/reusable-attest-scan.yml
+          VEX_SIGNER: attested-delivery/.github/.github/workflows/reusable-vex.yml
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -299,14 +389,25 @@ jobs:
               --predicate-type "https://cyclonedx.org/bom"
             echo "  PASS: SBOM attestation"
 
-            # 3. SAST verdict — seam-signed (SLSA L3: signer is the central
+            # 3. Seam-signed gate verdicts (SLSA L3: signer is the central
             # reusable-attest-scan.yml, so --signer-workflow is required).
-            echo "  [3/3] SAST verdict (seam)..."
+            for pt in sast sca iac-license; do
+              echo "  [3/4] Gate verdict (${pt}, seam)..."
+              gh attestation verify "${artifact}" \
+                --owner "${OWNER}" \
+                --signer-workflow "${SEAM}" \
+                --predicate-type "https://attested-delivery.github.io/attestations/${pt}/v1"
+              echo "  PASS: ${pt} verdict"
+            done
+
+            # 4. VEX disposition — self-signed by reusable-vex.yml (its own
+            # signer identity, NOT the seam), one signer per command.
+            echo "  [4/4] VEX disposition (OpenVEX)..."
             gh attestation verify "${artifact}" \
               --owner "${OWNER}" \
-              --signer-workflow "${SEAM}" \
-              --predicate-type "https://attested-delivery.github.io/attestations/sast/v1"
-            echo "  PASS: SAST verdict"
+              --signer-workflow "${VEX_SIGNER}" \
+              --predicate-type "https://openvex.dev/ns/v0.2.0"
+            echo "  PASS: VEX disposition"
           done
 
           echo ""

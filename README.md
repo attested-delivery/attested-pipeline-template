@@ -32,9 +32,11 @@ LICENSE           # Apache-2.0
 | `meta` | Resolves artifact name + version from the git ref | `contents: read` |
 | `build` | Builds the artifact, attests SLSA build provenance, exposes the subject digest | `id-token: write`, `attestations: write` |
 | `sbom` | Generates a CycloneDX SBOM via Syft, attests it | `id-token: write`, `attestations: write` |
-| `gate-sast` | SAST (CodeQL) — thin caller of `reusable-sast-codeql.yml`, emits SARIF | `security-events: write` |
-| `attest-sast` | Seam-signs the SAST verdict (`sast/v1`) bound to the release subject | `id-token: write`, `attestations: write` |
-| `verify` | **Fail-closed**: verifies provenance + SBOM + the seam-signed SAST verdict | `attestations: read` |
+| `gate-sast` / `attest-sast` | SAST (CodeQL) → seam-sign verdict (`sast/v1`) over the subject | `security-events: write` / `attestations: write` |
+| `gate-sca` / `attest-sca` | SCA (OSV) → seam-sign verdict (`sca/v1`) over the subject | `security-events: write` / `attestations: write` |
+| `gate-trivy` / `attest-iac-license` | IaC/license (Trivy) → seam-sign verdict (`iac-license/v1`) | `security-events: write` / `attestations: write` |
+| `vex` | OpenVEX disposition, self-signed (`reusable-vex.yml`, `openvex.dev/ns/v0.2.0`) over the subject | `id-token: write`, `attestations: write` |
+| `verify` | **Fail-closed**: verifies provenance + SBOM + every seam verdict (sast/sca/iac-license) + VEX | `attestations: read` |
 | `publish` | Creates the GitHub Release with checksums | `contents: write` — only on tag push, only if `verify` passes |
 
 The pipeline supports `workflow_dispatch` as a dry-run: the full
@@ -46,9 +48,18 @@ Every gate verdict that characterizes the shipped artifact — SAST (CodeQL), SC
 signed and attested at release, bound to the release subject by digest. SAST
 analyzes the exact source that ships, so its verdict travels with the release
 like the others. Supply-chain posture (Scorecard) is a repo-level signal, not an
-artifact verdict. This template wires SAST at release (`release.yml`) and a
-concrete DAST example (`dast.yml`); see `attested-delivery/rust-template` for SCA,
-IaC/license, and container-scan over a release subject.
+artifact verdict. This template is a **complete attested reference**: SAST + SCA
++ IaC/license + VEX in `release.yml`, DAST in `dast.yml`, merge-time
+SAST/SCA/Scorecard/Trivy in `quality-gates.yml`. Container-scan (Trivy image) is
+N/A here (this template ships a tarball, not an image); see
+`attested-delivery/rust-template` for the containerized variant.
+
+### `quality-gates.yml` — Merge-time gates
+
+Thin callers of the central SAST (CodeQL), SCA (OSV), posture (Scorecard), and
+IaC/license (Trivy) reusables. Each normalizes on SARIF and surfaces in the
+repository Security tab; wire "Code scanning results" as a required status check
+to make it a merge gate. Posture (Scorecard) lives here as a repo-level signal.
 
 ### `ci.yml` — CI + Pin Check
 
