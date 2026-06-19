@@ -65,7 +65,8 @@ target (`workflow_dispatch` input `target`, default the org's deployed site),
 then `attest-dast` seam-signs the verdict as `dast/v1` bound to a subject digest,
 and a fail-closed `verify` job re-checks it. Stand up your own deployed
 preview/staging and pass its URL. Requires the org Actions allow-list to permit
-`zaproxy/*` (owner action) since `reusable-zap.yml` pulls
+the single action `zaproxy/action-full-scan@*` (or its exact pinned SHA) — not a
+`zaproxy/*` owner wildcard — since `reusable-zap.yml` pulls
 `zaproxy/action-full-scan`.
 
 ## Adapting This Template

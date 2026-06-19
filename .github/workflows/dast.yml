@@ -17,8 +17,10 @@ name: DAST (attested)
 # predicate body), exactly like the SARIF gates.
 #
 # OWNER ALLOW-LIST: reusable-zap.yml pulls `zaproxy/action-full-scan`, a
-# third-party action. The org Actions allow-list must permit `zaproxy/*` (owner
-# action — add it to the README allow-list box) or this workflow startup-fails.
+# third-party action. The org Actions allow-list must permit that ONE action —
+# `zaproxy/action-full-scan@*` (or the exact pinned SHA) — NOT a `zaproxy/*`
+# owner wildcard, or this workflow startup-fails. The workflow pin stays
+# SHA-exact (pin-check enforces it); the allow-list just permits the action.
 
 "on":
   workflow_dispatch:
