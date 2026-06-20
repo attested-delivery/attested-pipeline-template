@@ -195,9 +195,11 @@ just the release pipeline. Handle each fetch in this order of preference:
    set -euo pipefail
    VERSION="1.45.1"
    SHA256="<sha256 of the pinned release artifact, from its published checksums>"
+   mkdir -p "${RUNNER_TEMP}/bin"
    curl -sSfL -o tool.tar.gz "https://…/v${VERSION}/tool_${VERSION}_linux_amd64.tar.gz"
    echo "${SHA256}  tool.tar.gz" | sha256sum -c -   # aborts the job on mismatch
    tar xzf tool.tar.gz -C "${RUNNER_TEMP}/bin" tool
+   echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"      # tool now on PATH for later steps
    ```
 
 4. **Never pipe-to-shell.** `curl … | sh`, `curl … | bash`, and `curl … | tar`
