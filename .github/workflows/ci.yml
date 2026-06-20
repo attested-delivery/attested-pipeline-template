@@ -63,9 +63,9 @@ jobs:
   # Thin caller of the central reusable-actionlint — the verified, pinned
   # actionlint download lives in the reusable (consume the central reusables,
   # never reinvent them). Pinned by the .github repo's commit SHA.
-  # attested-delivery/.github @ ea472d2 (PR #5)
+  # attested-delivery/.github @ de823d6 (#5, merged)
   validate-workflows:
     permissions:
       contents: read
     uses: >-
-      attested-delivery/.github/.github/workflows/reusable-actionlint.yml@ea472d2acaa1d80301d5e0e3e4a4676b0c7c2a2e
+      attested-delivery/.github/.github/workflows/reusable-actionlint.yml@de823d67209c82049ccc506819ebfbce1f4bc001
