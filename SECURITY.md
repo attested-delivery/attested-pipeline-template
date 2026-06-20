@@ -184,8 +184,12 @@ just the release pipeline. Handle each fetch in this order of preference:
 
    Run under `set -euo pipefail`, pin the exact version, and verify **before**
    executing the artifact. Where only a checksum is available, leave a `# TODO`
-   to upgrade when the publisher ships signed provenance. See `release.yml`
-   (Syft) and `ci.yml` (actionlint) for the pattern:
+   to upgrade when the publisher ships signed provenance. **Prefer step 2 when an
+   action exists** — e.g. `release.yml` generates its SBOM with the central
+   SHA-pinned `anchore/sbom-action` (the same action the org's `sign-and-attest`
+   reusable uses), *not* a hand-rolled Syft download. Reserve the download→verify
+   pattern (`ci.yml`, actionlint) for tools with no pinned action and not on the
+   runner:
 
    ```bash
    set -euo pipefail
