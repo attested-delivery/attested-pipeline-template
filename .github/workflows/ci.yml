@@ -68,14 +68,20 @@ jobs:
         # v4.2.2
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Install actionlint
+      - name: Install actionlint (pinned + checksum-verified, fail-closed)
         run: |
           set -euo pipefail
-          # Download a specific version of actionlint for reproducibility.
           ACTIONLINT_VERSION="1.7.7"
-          curl -sSfL \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
-            | tar xz -C /usr/local/bin actionlint
+          # Integrity floor: pinned sha256 of the release tarball (resolved from
+          # the published checksums), verified BEFORE extraction so a tampered
+          # download aborts the job. Replaces the unverified `curl | tar`.
+          # TODO: upgrade to `gh attestation verify` / cosign when rhysd/actionlint
+          # publishes Sigstore-signed provenance for its release artifacts.
+          SHA256="023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+          curl -sSfL -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${SHA256}  actionlint.tar.gz" | sha256sum -c -
+          tar xzf actionlint.tar.gz -C /usr/local/bin actionlint
           actionlint --version
 
       - name: Run actionlint

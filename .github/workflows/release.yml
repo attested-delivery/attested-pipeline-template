@@ -170,8 +170,18 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
         run: |
           set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/v1.45.1/install.sh \
-            | sh -s -- -b "${RUNNER_TEMP}/bin" v1.45.1
+          SYFT_VERSION="1.45.1"
+          # Integrity floor: pinned sha256 of the release tarball (resolved from
+          # anchore's published checksums), verified BEFORE use — replaces the
+          # unverified `install.sh | sh` pipe-to-shell.
+          # TODO: upgrade to cosign verify-blob of the Sigstore-signed
+          # checksums.txt (anchore signs Syft releases) when cosign is wired in.
+          SHA256="20c84195e24927f50a3b2269946be51f4c4abc9d2f145fee7388b4199149f716"
+          curl -sSfL -o syft.tar.gz \
+            "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          echo "${SHA256}  syft.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/bin"
+          tar xzf syft.tar.gz -C "${RUNNER_TEMP}/bin" syft
           "${RUNNER_TEMP}/bin/syft" scan dir:. \
             -o "cyclonedx-json=${NAME}-${VERSION}-sbom.cdx.json"
           echo "Generated SBOM: ${NAME}-${VERSION}-sbom.cdx.json"

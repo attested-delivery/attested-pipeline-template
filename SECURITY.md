@@ -159,3 +159,49 @@ bound to the subject digest; read the predicate body for the verdict itself
 - The release pipeline is fail-closed: `verify` must pass before `publish`
   can execute. There is no path from build to release that bypasses
   attestation verification.
+
+---
+
+## Trusted tool acquisition (verified fetches) — recommended for every workflow
+
+Every step that pulls an external package, binary, or tool into a job is a
+supply-chain entry point. **Adopters should apply this to *all* workflows**, not
+just the release pipeline. Handle each fetch in this order of preference:
+
+1. **Prefer the runner's pre-installed tools.** GitHub-hosted `ubuntu-latest`
+   already ships `gh`, `jq`, `git`, `curl`, `wget`, `tar`, `node`, `go`,
+   `python`, `docker`, and more — the runner image is your trust root. If a tool
+   is already present, **use it directly and add no install step**.
+2. **Otherwise, use a SHA-pinned action.** Pin every `uses:` to a full
+   40-character commit SHA (the `pin-check` gate enforces this); the action's
+   pin is the integrity boundary.
+3. **Otherwise, download → verify → fail closed**, using the *strongest*
+   integrity mechanism available, on this descending ladder — and never below a
+   checksum:
+
+   `gh attestation verify`  ›  `cosign verify`/`verify-blob` (or `gpg --verify` /
+   `minisign`)  ›  `sha256sum -c` against a **pinned digest** (the minimum floor).
+
+   Run under `set -euo pipefail`, pin the exact version, and verify **before**
+   executing the artifact. Where only a checksum is available, leave a `# TODO`
+   to upgrade when the publisher ships signed provenance. See `release.yml`
+   (Syft) and `ci.yml` (actionlint) for the pattern:
+
+   ```bash
+   set -euo pipefail
+   VERSION="1.45.1"
+   SHA256="<sha256 of the pinned release artifact, from its published checksums>"
+   curl -sSfL -o tool.tar.gz "https://…/v${VERSION}/tool_${VERSION}_linux_amd64.tar.gz"
+   echo "${SHA256}  tool.tar.gz" | sha256sum -c -   # aborts the job on mismatch
+   tar xzf tool.tar.gz -C "${RUNNER_TEMP}/bin" tool
+   ```
+
+4. **Never pipe-to-shell.** `curl … | sh`, `curl … | bash`, and `curl … | tar`
+   execute unverified bytes — there is no integrity check before code runs.
+   Always download to a file, verify, then run.
+5. **Package installs use lockfile / registry integrity, pinned and fail-closed:**
+   `npm ci` and `pnpm install --frozen-lockfile` / `yarn --immutable` (lockfile
+   hashes), `corepack` (signed package-manager keys), `go install pkg@version`
+   (Go checksum database), `cargo install --locked --version X` (crates.io index
+   checksums). Never unpinned (`cargo install foo`) and never failure-swallowing
+   (`… || true`).
