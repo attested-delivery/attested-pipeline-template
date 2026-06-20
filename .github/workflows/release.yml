@@ -161,19 +161,20 @@ jobs:
           name: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-dist
           path: dist
 
-      # Install Syft directly (official installer, pinned to v1.45.1) rather
-      # than a third-party Marketplace action, so the org Actions allow-list
-      # (GitHub-owned + verified creators only) never blocks this workflow.
+      # CycloneDX SBOM via the central, SHA-pinned anchore/sbom-action — the same
+      # action sign-and-attest.yml and the other repos already use. Syft
+      # acquisition is centralized and integrity-pinned (the action's commit
+      # SHA), not reinvented here. Requires the org allow-list to permit
+      # anchore/sbom-action (owner action; already permitted — rust-template and
+      # both Pages deployers use this exact SHA).
       - name: Generate CycloneDX SBOM
-        env:
-          NAME: ${{ needs.meta.outputs.name }}
-          VERSION: ${{ needs.meta.outputs.version }}
-        run: |
-          set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/v1.45.1/install.sh \
-            | sh -s -- -b "${RUNNER_TEMP}/bin" v1.45.1
-          "${RUNNER_TEMP}/bin/syft" scan dir:. \
-            -o "cyclonedx-json=${NAME}-${VERSION}-sbom.cdx.json"
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: ${{ needs.meta.outputs.name }}-${{ needs.meta.outputs.version }}-sbom.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
           echo "Generated SBOM: ${NAME}-${VERSION}-sbom.cdx.json"
 
       # Attest SBOM: binds every artifact in dist/ to the SBOM document.
