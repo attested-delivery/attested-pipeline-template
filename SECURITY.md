@@ -112,6 +112,44 @@ GitHub Actions OIDC token.
 
 ---
 
+## Verifying gate-verdict attestations
+
+Beyond provenance + SBOM (verified with `--repo`, above), this template
+seam-signs a verdict for every artifact-characterizing gate, bound to the subject
+digest: **SAST** (CodeQL), **SCA** (OSV), and **IaC/license** (Trivy) in
+`release.yml`, and **DAST** (ZAP) in `dast.yml`. Each is signed by the central
+attestation seam `reusable-attest-scan.yml`; under SLSA Build L3 the signer
+identity is that central workflow, so verification **requires**
+`--signer-workflow` (one signer/predicate per command) — `--owner`/`--repo`
+alone is insufficient:
+
+```bash
+# Seam-signed gate verdicts over the subject they were bound to.
+for PT in sast sca iac-license dast; do
+  gh attestation verify "$SUBJECT" --owner attested-delivery \
+    --signer-workflow attested-delivery/.github/.github/workflows/reusable-attest-scan.yml \
+    --predicate-type "https://attested-delivery.github.io/attestations/${PT}/v1"
+done
+```
+
+The **VEX** disposition is self-signed by a different workflow
+(`reusable-vex.yml`), so it pins its own signer:
+
+```bash
+gh attestation verify "$SUBJECT" --owner attested-delivery \
+  --signer-workflow attested-delivery/.github/.github/workflows/reusable-vex.yml \
+  --predicate-type https://openvex.dev/ns/v0.2.0
+```
+
+Supply-chain posture (Scorecard) is a repo-level signal surfaced in
+`quality-gates.yml`, not an artifact verdict. The Rust reference
+`attested-delivery/rust-template` wires the same seam plus container-scan (Trivy
+image). A passing verification proves the gate **ran and recorded a verdict**
+bound to the subject digest; read the predicate body for the verdict itself
+(signed ≠ passed).
+
+---
+
 ## Supply-Chain Security Posture
 
 - All GitHub Actions used in this repository are pinned to immutable full

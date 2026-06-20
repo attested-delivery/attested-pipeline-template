@@ -1,0 +1,82 @@
+---
+name: quality-gates
+
+# Merge-time quality gates — thin callers of the attested-delivery/.github central
+# reusable workflows (pinned by full commit SHA). Each gate normalizes on SARIF
+# and surfaces in the repository Security tab; wire the "Code scanning results"
+# check as a required status check to make it a merge gate.
+#
+# These run on every push/PR (and weekly). The release pipeline (release.yml)
+# additionally re-runs SAST/SCA/IaC-license over the release subject and signs
+# each verdict as a digest-bound attestation; posture (Scorecard) is a
+# repo-level signal and stays here, not re-attested per release.
+#
+# Adapt `languages:` to your stack — `actions` scans the repo's own workflows
+# (always present, no toolchain); add source language(s) (go, python, etc.).
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "37 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sast:
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+      packages: read
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
+    uses: >-
+      attested-delivery/.github/.github/workflows/reusable-sast-codeql.yml@698148e12da113cfeeef8742c31ae93657959e67
+    with:
+      languages: actions
+      build-mode: none
+
+  sca:
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      pull-requests: write
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
+    uses: >-
+      attested-delivery/.github/.github/workflows/reusable-sca-osv.yml@698148e12da113cfeeef8742c31ae93657959e67
+    with:
+      fail-on-severity: high
+
+  posture:
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
+    uses: >-
+      attested-delivery/.github/.github/workflows/reusable-scorecard.yml@698148e12da113cfeeef8742c31ae93657959e67
+    with:
+      publish-results: false
+
+  trivy:
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      packages: read
+    # attested-delivery/.github main @ 698148e (post-#4, 2026-06-19)
+    uses: >-
+      attested-delivery/.github/.github/workflows/reusable-trivy.yml@698148e12da113cfeeef8742c31ae93657959e67
+    with:
+      scan-iac: true
