@@ -1,3 +1,9 @@
+---
+diataxis_type: how-to
+title: Instantiate this template with Copier
+description: How to stand up a new project from attested-pipeline-template using Copier and pull future template improvements.
+---
+
 # Instantiate this template with Copier
 
 attested-pipeline-template is a **living, update-propagating template**. You can
