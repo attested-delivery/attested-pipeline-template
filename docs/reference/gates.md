@@ -17,7 +17,7 @@ Trigger: every push and pull request to `main`; `workflow_dispatch`.
 
 | Job | Purpose |
 |---|---|
-| `pin-check` | Thin caller of `reusable-pin-check.yml`; fails closed if any `uses:` references an action by tag or branch instead of a full 40-char SHA |
+| `pin-check` | Thin caller of `pin-check.yml`; fails closed if any `uses:` references an action by tag or branch instead of a full 40-char SHA |
 | `lint` | Counts TODO/FIXME/HACK/XXX markers in YAML, shell, and Markdown (informational; never fails) |
 | `validate-workflows` | Thin caller of `reusable-actionlint.yml`; validates workflow YAML syntax |
 
@@ -115,4 +115,8 @@ gh attestation verify "$ARTIFACT" \
 gh attestation verify "$ARTIFACT" \
   --repo attested-delivery/attested-pipeline-template \
   --predicate-type "https://slsa.dev/provenance/v1"
+
+gh attestation verify "$ARTIFACT" \
+  --repo attested-delivery/attested-pipeline-template \
+  --predicate-type "https://cyclonedx.org/bom"
 ```

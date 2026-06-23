@@ -8,7 +8,7 @@ with Copier.
 |---|---|
 | Project | `{{ project_name }}` |
 | Owner | `{{ owner }}` |
-| Description | {{ description }} |
+| Description | {{ description | replace('\n', ' ') | replace('|', '\\|') }} |
 
 To finish instantiation, update the self-references in `README.md`,
 `SECURITY.md`, and the workflow files from `attested-delivery/attested-pipeline-template`
