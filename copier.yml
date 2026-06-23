@@ -1,0 +1,39 @@
+# Copier template configuration. attested-pipeline-template is distributed as a
+# living, update-propagating template: `copier copy` instantiates it and
+# `copier update` re-applies later template improvements to an already-
+# instantiated project — the differentiator over snapshot engines and over
+# GitHub's one-shot "Use this template" (which this supplements, not replaces).
+#
+# Only *.jinja files are rendered (suffix stripped on generation); every other
+# file is copied verbatim, so the attested pipeline workflows, the VEX
+# disposition, and the gates travel UNCHANGED and this template repo keeps
+# passing its own gates.
+
+_templates_suffix: ".jinja"
+_answers_file: ".copier-answers.yml"
+_subdirectory: "."
+
+# Files that must never be copied into an instantiated project.
+_exclude:
+  - "copier.yml"
+  - ".git"
+  - "node_modules"
+  - "**/__pycache__"
+  - "*.pyc"
+
+# Instantiation Q&A — the project's real identity points (README, SECURITY,
+# workflow self-references).
+project_name:
+  type: str
+  help: "Project / repository name"
+  default: "attested-pipeline-template"
+
+owner:
+  type: str
+  help: "GitHub owner — your user or organization"
+  default: "attested-delivery"
+
+description:
+  type: str
+  help: "One-line project description"
+  default: "A project built on the attested-delivery pipeline template"

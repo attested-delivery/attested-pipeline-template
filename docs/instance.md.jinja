@@ -1,0 +1,18 @@
+# {{ project_name }} — template instance record
+
+This project was instantiated from
+[attested-delivery/attested-pipeline-template](https://github.com/attested-delivery/attested-pipeline-template)
+with Copier.
+
+| Field | Value |
+|---|---|
+| Project | `{{ project_name }}` |
+| Owner | `{{ owner }}` |
+| Description | {{ description | replace('\n', ' ') | replace('|', '\\|') }} |
+
+To finish instantiation, update the self-references in `README.md`,
+`SECURITY.md`, and the workflow files from `attested-delivery/attested-pipeline-template`
+to `{{ owner }}/{{ project_name }}`.
+
+Pull later improvements from the template with `copier update` — see
+[`how-to/instantiate-with-copier.md`](how-to/instantiate-with-copier.md).
