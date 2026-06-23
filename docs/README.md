@@ -1,7 +1,7 @@
 ---
 diataxis_type: reference
 title: Documentation index
-description: Index of all attested-pipeline-template documentation, organised by Diátaxis type.
+description: Index of all attested-pipeline-template documentation, organized by Diátaxis type.
 ---
 
 # attested-pipeline-template — documentation
