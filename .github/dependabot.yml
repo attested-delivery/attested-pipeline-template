@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # GitHub Actions — keeps the pipeline workflow SHA pins fresh. This file is
+  # NOT under a .jinja suffix (see copier.yml): every other repo-level
+  # workflow file already travels verbatim into instantiated projects, so
+  # this one does too, and keeps their SHA pins current the same way it does
+  # for this template repo itself.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Chicago"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
