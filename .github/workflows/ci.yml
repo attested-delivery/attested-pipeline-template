@@ -68,4 +68,4 @@ jobs:
     permissions:
       contents: read
     uses: >-
-      attested-delivery/.github/.github/workflows/reusable-actionlint.yml@b314c29ac9d445ea1f6ad5487743a909e104ceb9
+      attested-delivery/.github/.github/workflows/reusable-actionlint.yml@ee1f93b566abc109efa0588d3d5308b4dd4a7492
